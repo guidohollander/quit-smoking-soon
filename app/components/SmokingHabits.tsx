@@ -126,12 +126,74 @@ export default function SmokingHabits({
     return expectedCigarettes;
   }, [fixedStartTime, fixedEndTime, habits.cigarettesPerDay]);
 
+  const calculateDailyPattern = useCallback(() => {
+    // Define time periods (in hours)
+    const morningStart = 8;   // 8:00 AM
+    const afternoonStart = 12; // 12:00 PM
+    const eveningStart = 18;   // 6:00 PM
+    const dayEnd = 23.98;     // 23:59
+
+    // Calculate duration of each period
+    const morningHours = afternoonStart - morningStart;     // 4 hours (8:00-12:00)
+    const afternoonHours = eveningStart - afternoonStart;   // 6 hours (12:00-18:00)
+    const eveningHours = dayEnd - eveningStart;            // 5.98 hours (18:00-23:59)
+    const totalHours = morningHours + afternoonHours + eveningHours;
+
+    // Calculate cigarettes for each period based on duration
+    const totalCigarettes = habits.cigarettesPerDay; // Use the actual daily target
+    const morningTarget = Math.round((morningHours / totalHours) * totalCigarettes);
+    const afternoonTarget = Math.round((afternoonHours / totalHours) * totalCigarettes);
+    const eveningTarget = totalCigarettes - morningTarget - afternoonTarget; // Ensure total adds up
+
+    // Calculate current progress
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTime = currentHour + (currentMinute / 60);
+
+    let morningSmoked = 0;
+    let afternoonSmoked = 0;
+    let eveningSmoked = 0;
+    
+    // Calculate smoked cigarettes based on current time and total smoked
+    const totalSmoked = habits.cigarettesSmoked;
+    
+    if (currentTime >= dayEnd) {
+      // After end time - all cigarettes smoked
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
+    } else if (currentTime >= eveningStart) {
+      // Evening period (18:00-23:59)
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
+    } else if (currentTime >= afternoonStart) {
+      // Afternoon period (12:00-18:00)
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = 0;
+    } else if (currentTime >= morningStart) {
+      // Morning period (8:00-12:00)
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = 0;
+      eveningSmoked = 0;
+    }
+
+    return {
+      morning: morningSmoked,
+      afternoon: afternoonSmoked,
+      evening: eveningSmoked
+    };
+  }, [habits.cigarettesPerDay, habits.cigarettesSmoked]);
+
   const updateSmokingStatus = useCallback(() => {
     const currentSmoked = calculateCurrentSmoked();
+    const pattern = calculateDailyPattern();
     setHabits(prev => ({
       ...prev,
       cigarettesSmoked: currentSmoked,
-      cigarettesSmokedPerPeriod: calculateDailyPattern()
+      cigarettesSmokedPerPeriod: pattern
     }));
   }, [calculateCurrentSmoked, calculateDailyPattern]);
 
@@ -301,67 +363,6 @@ export default function SmokingHabits({
     const m = Math.floor(minutes % 60);
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
-
-  const calculateDailyPattern = useCallback(() => {
-    // Define time periods (in hours)
-    const morningStart = 8;   // 8:00 AM
-    const afternoonStart = 12; // 12:00 PM
-    const eveningStart = 18;   // 6:00 PM
-    const dayEnd = 23.98;     // 23:59
-
-    // Calculate duration of each period
-    const morningHours = afternoonStart - morningStart;     // 4 hours (8:00-12:00)
-    const afternoonHours = eveningStart - afternoonStart;   // 6 hours (12:00-18:00)
-    const eveningHours = dayEnd - eveningStart;            // 5.98 hours (18:00-23:59)
-    const totalHours = morningHours + afternoonHours + eveningHours;
-
-    // Calculate cigarettes for each period based on duration
-    const totalCigarettes = habits.cigarettesPerDay; // Use the actual daily target
-    const morningTarget = Math.round((morningHours / totalHours) * totalCigarettes);
-    const afternoonTarget = Math.round((afternoonHours / totalHours) * totalCigarettes);
-    const eveningTarget = totalCigarettes - morningTarget - afternoonTarget; // Ensure total adds up
-
-    // Calculate current progress
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const currentTime = currentHour + (currentMinute / 60);
-
-    let morningSmoked = 0;
-    let afternoonSmoked = 0;
-    let eveningSmoked = 0;
-    
-    // Calculate smoked cigarettes based on current time and total smoked
-    const totalSmoked = habits.cigarettesSmoked;
-    
-    if (currentTime >= dayEnd) {
-      // After end time - all cigarettes smoked
-      morningSmoked = Math.min(morningTarget, totalSmoked);
-      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
-      eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
-    } else if (currentTime >= eveningStart) {
-      // Evening period (18:00-23:59)
-      morningSmoked = Math.min(morningTarget, totalSmoked);
-      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
-      eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
-    } else if (currentTime >= afternoonStart) {
-      // Afternoon period (12:00-18:00)
-      morningSmoked = Math.min(morningTarget, totalSmoked);
-      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
-      eveningSmoked = 0;
-    } else if (currentTime >= morningStart) {
-      // Morning period (8:00-12:00)
-      morningSmoked = Math.min(morningTarget, totalSmoked);
-      afternoonSmoked = 0;
-      eveningSmoked = 0;
-    }
-
-    return {
-      morning: morningSmoked,
-      afternoon: afternoonSmoked,
-      evening: eveningSmoked
-    };
-  }, [habits.cigarettesPerDay, habits.cigarettesSmoked]);
 
   const calculateDailyPatternWithSmoked = useCallback((habits: SmokingHabits, smoked: number) => {
     const now = new Date();
