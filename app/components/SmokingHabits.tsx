@@ -102,8 +102,10 @@ export function CircularSmokingTracker({
   if (!mounted || !timingInfo) return null;
 
   // Calculate angles and positions for the circular tracker
-  const outerRingProgress = 360 * (timingInfo.minutesUntilNext / (timingInfo.minutesUntilNext + timingInfo.secondsUntilNext / 60));
-  const outerRingRemainingDegrees = 360 - outerRingProgress;
+  const totalTime = timingInfo.minutesUntilNext + timingInfo.secondsUntilNext / 60;
+  const remainingTime = timingInfo.minutesUntilNext + timingInfo.secondsUntilNext / 60;
+  const progressPercentage = 1 - (remainingTime / totalTime);
+  const outerRingProgress = 360 * progressPercentage;
   const cigaretteAngle = 360 / cigarettesPerDay;
   const smokedCigaretteAngles = habits.cigarettesSmoked * cigaretteAngle;
 
@@ -126,8 +128,8 @@ export function CircularSmokingTracker({
           fill="none" 
           stroke={timingInfo.isOnSchedule ? '#10B981' : '#EF4444'}
           strokeWidth="4"
-          strokeDasharray="301.59"
-          strokeDashoffset={301.59 - (outerRingRemainingDegrees / 360) * 301.59}
+          strokeDasharray={301.59}
+          strokeDashoffset={301.59 - (timingInfo.progress / 100) * 301.59}
           transform="rotate(-90 50 50)"
         />
       </svg>
@@ -309,14 +311,18 @@ export default function SmokingHabits({
 
     const resetHabits: SmokingHabits = {
       ...habitsState,
-      cigarettesSmoked: expectedCigarettes,
-      startDate: new Date().toISOString().split('T')[0]
+      cigarettesSmoked: expectedCigarettes,  
+      startDate: new Date().toISOString().split('T')[0],
+      lastSmokedTime: new Date().toISOString(),  // Reset lastSmokedTime to current time
+      cigarettesPerDay: 150,  // Explicitly set to 150
+      initialCount: 150
     };
 
     setHabitsState(resetHabits);
 
     if (typeof window !== 'undefined') {
       try {
+        localStorage.removeItem('smokingHabits');
         localStorage.setItem('smokingHabits', JSON.stringify(resetHabits));
       } catch (error) {
         console.error('Failed to reset smoking habits', error);
