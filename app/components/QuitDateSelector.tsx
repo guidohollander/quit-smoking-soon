@@ -6,6 +6,7 @@ import { differenceInDays, parseISO, format } from 'date-fns';
 interface QuitDateSelectorProps {
   className?: string;
   onQuitDateChange?: (date: string) => void;
+  onCigarettesPerDayChange: (value: number) => void;
   cigarettesPerDay: number;
   defaultQuitDate: string;
 }
@@ -13,6 +14,7 @@ interface QuitDateSelectorProps {
 export default function QuitDateSelector({ 
   className = '', 
   onQuitDateChange, 
+  onCigarettesPerDayChange,
   cigarettesPerDay,
   defaultQuitDate 
 }: QuitDateSelectorProps) {
@@ -35,6 +37,20 @@ export default function QuitDateSelector({
       onQuitDateChange(defaultQuitDate);
     }
   }, [defaultQuitDate, onQuitDateChange]);
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setQuitDate(e.target.value);
+    if (onQuitDateChange) {
+      onQuitDateChange(e.target.value);
+    }
+  };
+
+  const handleCigarettesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value);
+    if (!isNaN(value) && value >= 1 && value <= 99) {
+      onCigarettesPerDayChange(value);
+    }
+  };
 
   // Calculate reduction schedule
   const getReductionSchedule = () => {
@@ -84,17 +100,34 @@ export default function QuitDateSelector({
       </h2>
       
       <div className="space-y-4">
-        <div>
-          <label htmlFor="quitDate" className="block text-sm font-medium text-gray-300 mb-2">
-            Choose your quit date:
+        <div className="flex flex-col space-y-2">
+          <label htmlFor="cigarettesPerDay" className="text-sm text-gray-300">
+            Cigarettes per day:
+          </label>
+          <input
+            type="number"
+            id="cigarettesPerDay"
+            name="cigarettesPerDay"
+            value={cigarettesPerDay}
+            onChange={handleCigarettesChange}
+            min="1"
+            max="99"
+            className="w-full px-3 py-2 bg-[#1a1b26] text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div className="flex flex-col space-y-2">
+          <label htmlFor="quitDate" className="text-sm text-gray-300">
+            Target quit date:
           </label>
           <input
             type="date"
             id="quitDate"
+            name="quitDate"
             value={quitDate}
-            disabled
+            onChange={handleDateChange}
             min={format(new Date(), 'yyyy-MM-dd')}
-            className="w-full px-3 sm:px-4 py-2 rounded bg-[#2d3748] text-white border border-gray-600 focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+            className="w-full px-3 py-2 bg-[#1a1b26] text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500"
           />
         </div>
 

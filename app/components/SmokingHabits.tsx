@@ -6,18 +6,19 @@ interface SmokingHabitsProps {
   className?: string;
   fixedStartTime: string;
   fixedEndTime: string;
+  cigarettesPerDay?: number;
 }
 
 interface SmokingHabits {
   cigarettesPerDay: number;
-  startTime: string;
-  endTime: string;
   cigarettesSmoked: number;
   cigarettesSmokedPerPeriod: {
     morning: number;
     afternoon: number;
     evening: number;
   };
+  startTime: string;
+  endTime: string;
   startDate: string;
   targetDate: string;
   initialCount: number;
@@ -35,27 +36,51 @@ interface CigaretteTimingInfo {
 
 const defaultHabits: SmokingHabits = {
   cigarettesPerDay: 30,
-  startTime: '08:00',
-  endTime: '23:59',
   cigarettesSmoked: 0,
   cigarettesSmokedPerPeriod: {
     morning: 0,
     afternoon: 0,
     evening: 0
   },
+  startTime: '08:00',
+  endTime: '23:59',
   startDate: new Date().toISOString().split('T')[0],
   targetDate: '2025-01-31',
   initialCount: 30
 };
 
-export default function SmokingHabits({ className = '', fixedStartTime, fixedEndTime }: SmokingHabitsProps) {
+export default function SmokingHabits({ 
+  className = '', 
+  fixedStartTime, 
+  fixedEndTime,
+  cigarettesPerDay = 30 
+}: SmokingHabitsProps) {
+  const [mounted, setMounted] = useState(false);
   const [habits, setHabits] = useState<SmokingHabits>({
-    ...defaultHabits,
+    cigarettesPerDay,
+    cigarettesSmoked: 0,
+    cigarettesSmokedPerPeriod: {
+      morning: 0,
+      afternoon: 0,
+      evening: 0
+    },
     startTime: fixedStartTime,
-    endTime: fixedEndTime
+    endTime: fixedEndTime,
+    startDate: new Date().toISOString().split('T')[0],
+    targetDate: '2025-01-31',
+    initialCount: cigarettesPerDay
   });
   const [timingInfo, setTimingInfo] = useState<CigaretteTimingInfo | null>(null);
-  const [mounted, setMounted] = useState(false);
+
+  // Initialize on mount
+  useEffect(() => {
+    setMounted(true);
+    const stored = localStorage.getItem('smokingHabits');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      setHabits(parsed);
+    }
+  }, []);
 
   const calculateCurrentSmoked = useCallback(() => {
     const now = new Date();
@@ -110,7 +135,7 @@ export default function SmokingHabits({ className = '', fixedStartTime, fixedEnd
     }));
   }, [calculateCurrentSmoked]);
 
-  // Initialize on mount
+  // Initialize mounted state
   useEffect(() => {
     setMounted(true);
     updateSmokingStatus(); // Calculate initial status immediately
@@ -118,9 +143,14 @@ export default function SmokingHabits({ className = '', fixedStartTime, fixedEnd
 
   // Update every minute
   useEffect(() => {
-    const interval = setInterval(updateSmokingStatus, 60000);
+    if (!mounted) return;
+
+    const interval = setInterval(() => {
+      updateSmokingStatus();
+    }, 60000); // Update every minute
+
     return () => clearInterval(interval);
-  }, [updateSmokingStatus]);
+  }, [mounted, updateSmokingStatus]);
 
   const handleReset = useCallback(() => {
     localStorage.clear(); // Clear localStorage
@@ -250,48 +280,6 @@ export default function SmokingHabits({ className = '', fixedStartTime, fixedEnd
     }
   }, [calculateDailyTarget, habits]);
 
-  // Update timing info every 100ms for smoother animation
-  useEffect(() => {
-    const updateTiming = () => {
-      setTimingInfo(calculateTimingInfo());
-    };
-
-    // Initial calculation
-    updateTiming();
-
-    // Set up interval for updates
-    const interval = setInterval(updateTiming, 100);
-
-    // Cleanup interval on unmount
-    return () => clearInterval(interval);
-  }, [calculateTimingInfo]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    let updatedValue: string | number = value;
-
-    // Convert to number for numeric fields
-    if (name === 'cigarettesPerDay' || name === 'initialCount') {
-      updatedValue = value === '' ? 0 : Math.max(0, parseInt(value, 10) || 0);
-    }
-
-    const updatedHabits = {
-      ...habits,
-      [name]: updatedValue,
-      ...(name === 'cigarettesPerDay' ? {
-        cigarettesSmoked: 0,
-        cigarettesSmokedPerPeriod: {
-          morning: 0,
-          afternoon: 0,
-          evening: 0
-        }
-      } : {})
-    };
-
-    setHabits(updatedHabits);
-    localStorage.setItem('smokingHabits', JSON.stringify(updatedHabits));
-  };
-
   const getTimeRangeForPeriod = (start: number, end: number): string => {
     const [startHour] = habits.startTime.split(':').map(Number);
     const [endHour] = habits.endTime.split(':').map(Number);
@@ -315,36 +303,34 @@ export default function SmokingHabits({ className = '', fixedStartTime, fixedEnd
   };
 
   const calculateDailyPattern = useCallback(() => {
+    // Define time periods (in hours)
+    const morningStart = 8;   // 8:00 AM
+    const afternoonStart = 12; // 12:00 PM
+    const eveningStart = 18;   // 6:00 PM
+    const dayEnd = 23.98;     // 23:59
+
+    // Calculate duration of each period
+    const morningHours = afternoonStart - morningStart;     // 4 hours (8:00-12:00)
+    const afternoonHours = eveningStart - afternoonStart;   // 6 hours (12:00-18:00)
+    const eveningHours = dayEnd - eveningStart;            // 5.98 hours (18:00-23:59)
+    const totalHours = morningHours + afternoonHours + eveningHours;
+
+    // Calculate cigarettes for each period based on duration
+    const totalCigarettes = 32; // Fixed value
+    const morningTarget = Math.round((morningHours / totalHours) * totalCigarettes);
+    const afternoonTarget = Math.round((afternoonHours / totalHours) * totalCigarettes);
+    const eveningTarget = totalCigarettes - morningTarget - afternoonTarget; // Ensure total adds up to 32
+
+    // Calculate current progress
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
-    
-    // Define time periods (in hours)
-    const morningStart = 8;  // 8:00 AM
-    const afternoonStart = 12; // 12:00 PM
-    const eveningStart = 16;  // 4:00 PM
-    const dayEnd = 23.98;    // 23:59
-
-    // Calculate total smoking hours and cigarettes per period
-    const totalSmokingHours = dayEnd - morningStart;
-    const cigarettesPerHour = habits.cigarettesPerDay / totalSmokingHours;
-
-    // Calculate targets for each period
-    const morningHours = afternoonStart - morningStart;
-    const afternoonHours = eveningStart - afternoonStart;
-    const eveningHours = dayEnd - eveningStart;
-
-    const morningTarget = Math.round(morningHours * cigarettesPerHour);
-    const afternoonTarget = Math.round(afternoonHours * cigarettesPerHour);
-    const eveningTarget = habits.cigarettesPerDay - morningTarget - afternoonTarget;
-
-    // Calculate current progress based on time
     const currentTime = currentHour + (currentMinute / 60);
-    
+
     let morningSmoked = 0;
     let afternoonSmoked = 0;
     let eveningSmoked = 0;
-
+    
     // Calculate smoked cigarettes based on current time and total smoked
     const totalSmoked = habits.cigarettesSmoked;
     
@@ -354,17 +340,17 @@ export default function SmokingHabits({ className = '', fixedStartTime, fixedEnd
       afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
       eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
     } else if (currentTime >= eveningStart) {
-      // Evening period
+      // Evening period (18:00-23:59)
       morningSmoked = Math.min(morningTarget, totalSmoked);
       afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
       eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
     } else if (currentTime >= afternoonStart) {
-      // Afternoon period
+      // Afternoon period (12:00-18:00)
       morningSmoked = Math.min(morningTarget, totalSmoked);
       afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
       eveningSmoked = 0;
     } else if (currentTime >= morningStart) {
-      // Morning period
+      // Morning period (8:00-12:00)
       morningSmoked = Math.min(morningTarget, totalSmoked);
       afternoonSmoked = 0;
       eveningSmoked = 0;
@@ -384,7 +370,96 @@ export default function SmokingHabits({ className = '', fixedStartTime, fixedEnd
         total: eveningTarget
       }
     };
-  }, [habits.cigarettesPerDay, habits.cigarettesSmoked]);
+  }, [habits.cigarettesSmoked]);
+
+  const calculateDailyPatternWithSmoked = useCallback((habits: SmokingHabits, smoked: number) => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    
+    // Define time periods (in hours)
+    const morningStart = 8;   // 8:00 AM
+    const afternoonStart = 12; // 12:00 PM
+    const eveningStart = 18;   // 6:00 PM
+    const dayEnd = 23.98;     // 23:59
+
+    // Calculate duration of each period
+    const morningHours = afternoonStart - morningStart;     // 4 hours (8:00-12:00)
+    const afternoonHours = eveningStart - afternoonStart;   // 6 hours (12:00-18:00)
+    const eveningHours = dayEnd - eveningStart;            // 5.98 hours (18:00-23:59)
+    const totalHours = morningHours + afternoonHours + eveningHours;
+
+    // Calculate targets for each period based on duration
+    const totalCigarettes = habits.cigarettesPerDay;
+    const morningTarget = Math.round((morningHours / totalHours) * totalCigarettes);
+    const afternoonTarget = Math.round((afternoonHours / totalHours) * totalCigarettes);
+    const eveningTarget = totalCigarettes - morningTarget - afternoonTarget;
+
+    // Calculate current progress based on time
+    const currentTime = currentHour + (currentMinute / 60);
+    
+    let morningSmoked = 0;
+    let afternoonSmoked = 0;
+    let eveningSmoked = 0;
+
+    // Calculate smoked cigarettes based on current time and total smoked
+    const totalSmoked = smoked;
+    
+    if (currentTime >= dayEnd) {
+      // After end time - all cigarettes smoked
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
+    } else if (currentTime >= eveningStart) {
+      // Evening period (18:00-23:59)
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
+    } else if (currentTime >= afternoonStart) {
+      // Afternoon period (12:00-18:00)
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = 0;
+    } else if (currentTime >= morningStart) {
+      // Morning period (8:00-12:00)
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = 0;
+      eveningSmoked = 0;
+    }
+
+    return {
+      morning: {
+        smoked: morningSmoked,
+        total: morningTarget
+      },
+      afternoon: {
+        smoked: afternoonSmoked,
+        total: afternoonTarget
+      },
+      evening: {
+        smoked: eveningSmoked,
+        total: eveningTarget
+      }
+    };
+  }, []);
+
+  // Update timing info every 100ms for smoother animation
+  useEffect(() => {
+    if (!mounted) return;
+    
+    const updateTiming = () => {
+      setTimingInfo(calculateTimingInfo());
+    };
+
+    // Initial calculation
+    updateTiming();
+
+    // Set up interval for updates
+    const interval = setInterval(updateTiming, 100);
+
+    // Cleanup interval on unmount
+    return () => clearInterval(interval);
+  }, [calculateTimingInfo, mounted]);
 
   return (
     <div className={`${className} bg-[#1f2937] p-4 sm:p-6 rounded-lg relative`}>
@@ -395,71 +470,84 @@ export default function SmokingHabits({ className = '', fixedStartTime, fixedEnd
       {/* Only render dynamic content after mounting */}
       {mounted && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4">
-            {/* Right Block - Daily Tracking */}
-            <div>
-              <div>
-                <label htmlFor="cigarettesPerDay" className="block text-sm font-medium text-gray-300 mb-2">
-                  Current cigarettes per day:
-                </label>
-                <input
-                  type="number"
-                  id="cigarettesPerDay"
-                  name="cigarettesPerDay"
-                  value={habits?.cigarettesPerDay?.toString() || '0'}
-                  onChange={handleChange}
-                  min="0"
-                  className="w-full px-3 sm:px-4 py-2 rounded bg-[#2d3748] text-white border border-gray-600 focus:outline-none focus:border-blue-500 text-sm sm:text-base"
-                />
-              </div>
-
+          <div className="grid grid-cols-1 lg:grid-cols-2 lg:gap-6">
+            {/* Left Column */}
+            <div className="space-y-6">
               <div className="flex flex-col space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-300">Cigarettes today:</span>
                   <span className="text-lg font-semibold">{habits.cigarettesSmoked}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-300">Daily target:</span>
-                  <span className="text-lg font-semibold">{habits.cigarettesPerDay}</span>
-                </div>
+              </div>
 
-                <div className="mt-4">
-                  <h3 className="text-lg font-medium text-gray-200 mb-3">Your daily smoking pattern:</h3>
-                  <div className="space-y-4">
-                    {Object.entries(calculateDailyPattern()).map(([period, data]) => (
-                      <div key={period} className="flex flex-col">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-sm capitalize">{period}</span>
-                          <span className="text-sm">{data.smoked} of {data.total}</span>
-                        </div>
-                        <div className="w-full bg-gray-700 rounded-full h-2">
-                          <div
-                            className="bg-blue-500 rounded-full h-2 transition-all duration-500"
-                            style={{
-                              width: `${(data.smoked / data.total) * 100}%`
-                            }}
-                          />
-                        </div>
+              <div className="mt-4">
+                <h3 className="text-lg font-medium text-gray-200 mb-3">Your daily smoking pattern:</h3>
+                <div className="space-y-4">
+                  {Object.entries(calculateDailyPattern()).map(([period, data]) => (
+                    <div key={period} className="flex flex-col">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm capitalize">{period}</span>
+                        <span className="text-sm text-gray-400">
+                          {data.smoked}/{data.total}
+                        </span>
                       </div>
-                    ))}
-                  </div>
+                      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 transition-all duration-300"
+                          style={{
+                            width: `${(data.smoked / data.total) * 100}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* Reset button at the bottom */}
               <div className="mt-6">
                 <button
                   onClick={handleReset}
-                  className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors duration-200"
                 >
                   Reset Progress
                 </button>
               </div>
             </div>
+
+            {/* Right Column */}
+            <div className="space-y-6">
+              <div className="bg-[#2d3748] rounded-lg p-4">
+                <h3 className="text-lg font-medium text-gray-200 mb-4">Daily Schedule</h3>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-300">Cigarettes per Day:</span>
+                    <span className="text-sm font-medium">32</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-300">Start Time:</span>
+                    <span className="text-sm font-medium">08:00</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-300">End Time:</span>
+                    <span className="text-sm font-medium">23:59</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-300">Hours per Day:</span>
+                    <span className="text-sm font-medium">15.98</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-300">Minutes per Cigarette:</span>
+                    <span className="text-sm font-medium">
+                      {Math.round((15.98 * 60) / 32)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
-
+      
       {/* Floating smoke button */}
       {mounted && (
         <div className="fixed bottom-4 right-4 z-50">
