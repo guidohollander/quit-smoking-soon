@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 
 interface SmokingHabitsProps {
   className?: string;
+  fixedStartTime: string;
+  fixedEndTime: string;
 }
 
 interface SmokingHabits {
@@ -42,75 +44,175 @@ const defaultHabits: SmokingHabits = {
     evening: 0
   },
   startDate: new Date().toISOString().split('T')[0],
-  targetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  targetDate: '2025-01-31',
   initialCount: 30
 };
 
-export default function SmokingHabits({ className = '' }: SmokingHabitsProps) {
-  const [habits, setHabits] = useState<SmokingHabits>(defaultHabits);
+export default function SmokingHabits({ className = '', fixedStartTime, fixedEndTime }: SmokingHabitsProps) {
+  const [habits, setHabits] = useState<SmokingHabits>({
+    ...defaultHabits,
+    startTime: fixedStartTime,
+    endTime: fixedEndTime
+  });
   const [timingInfo, setTimingInfo] = useState<CigaretteTimingInfo | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-    const savedHabits = localStorage.getItem('smokingHabits');
-    if (savedHabits) {
-      try {
-        const parsed = JSON.parse(savedHabits);
-        // Ensure numeric values are properly initialized
-        setHabits({
-          ...defaultHabits,
-          ...parsed,
-          cigarettesPerDay: Number(parsed.cigarettesPerDay) || defaultHabits.cigarettesPerDay,
-          cigarettesSmoked: Number(parsed.cigarettesSmoked) || 0,
-          initialCount: Number(parsed.initialCount) || defaultHabits.initialCount,
-          cigarettesSmokedPerPeriod: {
-            morning: Number(parsed.cigarettesSmokedPerPeriod?.morning) || 0,
-            afternoon: Number(parsed.cigarettesSmokedPerPeriod?.afternoon) || 0,
-            evening: Number(parsed.cigarettesSmokedPerPeriod?.evening) || 0
-          }
-        });
-      } catch (e) {
-        setHabits(defaultHabits);
-      }
-    }
-  }, []);
-
-  // Function to calculate timing information
-  const calculateTimingInfo = useCallback(() => {
-    const totalSmokingMinutes = getSmokingHoursPerDay(habits.startTime, habits.endTime) * 60;
-    const minutesBetweenCigarettes = totalSmokingMinutes / habits.cigarettesPerDay;
-    
+  const calculateCurrentSmoked = useCallback(() => {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
-    const currentSecond = now.getSeconds();
-    const currentTimeInMinutes = currentHour * 60 + currentMinute + (currentSecond / 60);
     
-    const [startHour, startMinute] = habits.startTime.split(':').map(Number);
+    // Convert current time to minutes since start of day
+    const currentTimeInMinutes = currentHour * 60 + currentMinute;
+    
+    // Convert smoking hours to minutes
+    const startHour = parseInt(fixedStartTime.split(':')[0]);
+    const startMinute = parseInt(fixedStartTime.split(':')[1]);
     const startTimeInMinutes = startHour * 60 + startMinute;
     
-    const minutesSinceStart = currentTimeInMinutes - startTimeInMinutes;
-    const expectedCigarettes = Math.floor(minutesSinceStart / minutesBetweenCigarettes);
+    const endHour = parseInt(fixedEndTime.split(':')[0]);
+    const endMinute = parseInt(fixedEndTime.split(':')[1]);
+    const endTimeInMinutes = endHour * 60 + endMinute;
     
-    const lastCigaretteTime = startTimeInMinutes + (expectedCigarettes * minutesBetweenCigarettes);
-    const nextCigaretteTime = startTimeInMinutes + ((expectedCigarettes + 1) * minutesBetweenCigarettes);
+    // Calculate total smoking minutes in a day
+    const totalSmokingMinutes = endTimeInMinutes - startTimeInMinutes;
     
-    const progress = (currentTimeInMinutes - lastCigaretteTime) / (nextCigaretteTime - lastCigaretteTime);
+    // If current time is before start time, return 0
+    if (currentTimeInMinutes < startTimeInMinutes) {
+      return 0;
+    }
+    
+    // If current time is after end time, return total cigarettes
+    if (currentTimeInMinutes > endTimeInMinutes) {
+      return habits.cigarettesPerDay;
+    }
+    
+    // Calculate elapsed smoking time
+    const elapsedSmokingMinutes = Math.min(
+      currentTimeInMinutes - startTimeInMinutes,
+      totalSmokingMinutes
+    );
+    
+    // Calculate expected cigarettes based on elapsed time
+    const expectedCigarettes = Math.round(
+      (elapsedSmokingMinutes / totalSmokingMinutes) * habits.cigarettesPerDay
+    );
+    
+    return expectedCigarettes;
+  }, [fixedStartTime, fixedEndTime, habits.cigarettesPerDay]);
+
+  const updateSmokingStatus = useCallback(() => {
+    const currentSmoked = calculateCurrentSmoked();
+    setHabits(prev => ({
+      ...prev,
+      cigarettesSmoked: currentSmoked,
+      cigarettesSmokedPerPeriod: calculateDailyPattern(prev, currentSmoked)
+    }));
+  }, [calculateCurrentSmoked]);
+
+  // Initialize on mount
+  useEffect(() => {
+    setMounted(true);
+    updateSmokingStatus(); // Calculate initial status immediately
+  }, [updateSmokingStatus]);
+
+  // Update every minute
+  useEffect(() => {
+    const interval = setInterval(updateSmokingStatus, 60000);
+    return () => clearInterval(interval);
+  }, [updateSmokingStatus]);
+
+  const handleReset = useCallback(() => {
+    localStorage.clear(); // Clear localStorage
+    updateSmokingStatus(); // Immediately calculate new smoking status
+  }, [updateSmokingStatus]);
+
+  // Function to calculate timing information
+  const calculateTimingInfo = useCallback(() => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTime = currentHour + (currentMinute / 60);
+
+    // Convert smoking hours to minutes since midnight
+    const startHour = parseInt(fixedStartTime.split(':')[0]);
+    const startMinute = parseInt(fixedStartTime.split(':')[1]);
+    const startTimeInMinutes = startHour * 60 + startMinute;
+    
+    const endHour = parseInt(fixedEndTime.split(':')[0]);
+    const endMinute = parseInt(fixedEndTime.split(':')[1]);
+    const endTimeInMinutes = endHour * 60 + endMinute;
+
+    const currentTimeInMinutes = currentHour * 60 + currentMinute;
+    
+    // If outside smoking hours
+    if (currentTimeInMinutes < startTimeInMinutes || currentTimeInMinutes > endTimeInMinutes) {
+      return null;
+    }
+
+    const totalSmokingMinutes = endTimeInMinutes - startTimeInMinutes;
+    const minutesPerCigarette = totalSmokingMinutes / habits.cigarettesPerDay;
+    
+    // Calculate how many cigarettes should have been smoked by now
+    const minutesElapsed = currentTimeInMinutes - startTimeInMinutes;
+    const expectedCigarettes = Math.floor(minutesElapsed / minutesPerCigarette);
+    
+    // Calculate last and next cigarette times
+    const lastCigaretteTime = startTimeInMinutes + (expectedCigarettes * minutesPerCigarette);
+    const nextCigaretteTime = startTimeInMinutes + ((expectedCigarettes + 1) * minutesPerCigarette);
     
     const minutesUntilNext = nextCigaretteTime - currentTimeInMinutes;
-    const secondsUntilNext = Math.round(minutesUntilNext * 60);
+    const secondsUntilNext = minutesUntilNext * 60;
     
+    // Calculate progress towards next cigarette
+    const progress = (currentTimeInMinutes - lastCigaretteTime) / minutesPerCigarette;
+    
+    // Determine if on schedule
+    const isOnSchedule = habits.cigarettesSmoked >= expectedCigarettes;
+
     return {
-      progress: Math.min(1, Math.max(0, progress)),
+      progress,
       lastCigaretteTime,
       nextCigaretteTime,
-      isOnSchedule: habits.cigarettesSmoked <= expectedCigarettes,
+      isOnSchedule,
       minutesUntilNext,
       secondsUntilNext,
       expectedCigarettes
     };
-  }, [habits.startTime, habits.endTime, habits.cigarettesPerDay, habits.cigarettesSmoked]);
+  }, [habits.cigarettesPerDay, habits.cigarettesSmoked, fixedStartTime, fixedEndTime]);
+
+  const handleSmokeClick = () => {
+    const info = calculateTimingInfo();
+    if (!info) return; // Don't allow smoking outside of smoking hours
+
+    if (habits.cigarettesSmoked < habits.cigarettesPerDay) {
+      const newTotal = habits.cigarettesSmoked + 1;
+      const pattern = calculateDailyPattern();
+      
+      // Update both the total count and the pattern
+      setHabits(prev => ({
+        ...prev,
+        cigarettesSmoked: newTotal,
+        cigarettesSmokedPerPeriod: {
+          morning: pattern.morning.smoked,
+          afternoon: pattern.afternoon.smoked,
+          evening: pattern.evening.smoked
+        }
+      }));
+
+      // Update localStorage
+      const updatedHabits = {
+        ...habits,
+        cigarettesSmoked: newTotal,
+        cigarettesSmokedPerPeriod: {
+          morning: pattern.morning.smoked,
+          afternoon: pattern.afternoon.smoked,
+          evening: pattern.evening.smoked
+        }
+      };
+      localStorage.setItem('smokingHabits', JSON.stringify(updatedHabits));
+    }
+  };
 
   const calculateDailyTarget = useCallback(() => {
     try {
@@ -190,62 +292,6 @@ export default function SmokingHabits({ className = '' }: SmokingHabitsProps) {
     localStorage.setItem('smokingHabits', JSON.stringify(updatedHabits));
   };
 
-  const handleReset = () => {
-    const updatedHabits = {
-      ...habits,
-      cigarettesPerDay: 30,
-      cigarettesSmoked: 0,
-      cigarettesSmokedPerPeriod: {
-        morning: 0,
-        afternoon: 0,
-        evening: 0
-      }
-    };
-    setHabits(updatedHabits);
-    localStorage.setItem('smokingHabits', JSON.stringify(updatedHabits));
-  };
-
-  const handleSmokeClick = () => {
-    if (habits.cigarettesSmoked < habits.cigarettesPerDay) {
-      // Find the first period that still has cigarettes available
-      const periods = [
-        { name: 'morning', start: 6, end: 12 },
-        { name: 'afternoon', start: 12, end: 18 },
-        { name: 'evening', start: 18, end: 24 }
-      ];
-
-      let periodToUpdate = null;
-      for (const period of periods) {
-        const hoursInPeriod = generateHourBlocks(habits.startTime, habits.endTime)
-          .filter(h => h.hour >= period.start && h.hour < period.end);
-        
-        if (hoursInPeriod.length === 0) continue;
-
-        const cigarettesPerHour = habits.cigarettesPerDay / getSmokingHoursPerDay(habits.startTime, habits.endTime);
-        const totalInPeriod = Math.round(cigarettesPerHour * hoursInPeriod.length);
-        const smokedInPeriod = habits.cigarettesSmokedPerPeriod[period.name as keyof typeof habits.cigarettesSmokedPerPeriod];
-
-        if (smokedInPeriod < totalInPeriod) {
-          periodToUpdate = period.name;
-          break;
-        }
-      }
-
-      if (periodToUpdate) {
-        const updatedHabits = {
-          ...habits,
-          cigarettesSmoked: habits.cigarettesSmoked + 1,
-          cigarettesSmokedPerPeriod: {
-            ...habits.cigarettesSmokedPerPeriod,
-            [periodToUpdate]: habits.cigarettesSmokedPerPeriod[periodToUpdate as keyof typeof habits.cigarettesSmokedPerPeriod] + 1
-          }
-        };
-        setHabits(updatedHabits);
-        localStorage.setItem('smokingHabits', JSON.stringify(updatedHabits));
-      }
-    }
-  };
-
   const getTimeRangeForPeriod = (start: number, end: number): string => {
     const [startHour] = habits.startTime.split(':').map(Number);
     const [endHour] = habits.endTime.split(':').map(Number);
@@ -267,6 +313,78 @@ export default function SmokingHabits({ className = '' }: SmokingHabitsProps) {
     const m = Math.floor(minutes % 60);
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
+
+  const calculateDailyPattern = useCallback(() => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    
+    // Define time periods (in hours)
+    const morningStart = 8;  // 8:00 AM
+    const afternoonStart = 12; // 12:00 PM
+    const eveningStart = 16;  // 4:00 PM
+    const dayEnd = 23.98;    // 23:59
+
+    // Calculate total smoking hours and cigarettes per period
+    const totalSmokingHours = dayEnd - morningStart;
+    const cigarettesPerHour = habits.cigarettesPerDay / totalSmokingHours;
+
+    // Calculate targets for each period
+    const morningHours = afternoonStart - morningStart;
+    const afternoonHours = eveningStart - afternoonStart;
+    const eveningHours = dayEnd - eveningStart;
+
+    const morningTarget = Math.round(morningHours * cigarettesPerHour);
+    const afternoonTarget = Math.round(afternoonHours * cigarettesPerHour);
+    const eveningTarget = habits.cigarettesPerDay - morningTarget - afternoonTarget;
+
+    // Calculate current progress based on time
+    const currentTime = currentHour + (currentMinute / 60);
+    
+    let morningSmoked = 0;
+    let afternoonSmoked = 0;
+    let eveningSmoked = 0;
+
+    // Calculate smoked cigarettes based on current time and total smoked
+    const totalSmoked = habits.cigarettesSmoked;
+    
+    if (currentTime >= dayEnd) {
+      // After end time - all cigarettes smoked
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
+    } else if (currentTime >= eveningStart) {
+      // Evening period
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = Math.min(eveningTarget, Math.max(0, totalSmoked - morningTarget - afternoonTarget));
+    } else if (currentTime >= afternoonStart) {
+      // Afternoon period
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = Math.min(afternoonTarget, Math.max(0, totalSmoked - morningTarget));
+      eveningSmoked = 0;
+    } else if (currentTime >= morningStart) {
+      // Morning period
+      morningSmoked = Math.min(morningTarget, totalSmoked);
+      afternoonSmoked = 0;
+      eveningSmoked = 0;
+    }
+
+    return {
+      morning: {
+        smoked: morningSmoked,
+        total: morningTarget
+      },
+      afternoon: {
+        smoked: afternoonSmoked,
+        total: afternoonTarget
+      },
+      evening: {
+        smoked: eveningSmoked,
+        total: eveningTarget
+      }
+    };
+  }, [habits.cigarettesPerDay, habits.cigarettesSmoked]);
 
   return (
     <div className={`${className} bg-[#1f2937] p-4 sm:p-6 rounded-lg relative`}>
@@ -295,276 +413,92 @@ export default function SmokingHabits({ className = '' }: SmokingHabitsProps) {
                 />
               </div>
 
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Smoking hours:
-                </label>
-                <div className="flex flex-col space-y-2">
-                  <input
-                    type="time"
-                    name="startTime"
-                    value={habits.startTime}
-                    onChange={handleChange}
-                    className="w-full px-3 sm:px-4 py-2 rounded bg-[#2d3748] text-white border border-gray-600 focus:outline-none focus:border-blue-500 text-sm sm:text-base"
-                  />
-                  <input
-                    type="time"
-                    name="endTime"
-                    value={habits.endTime}
-                    onChange={handleChange}
-                    className="w-full px-3 sm:px-4 py-2 rounded bg-[#2d3748] text-white border border-gray-600 focus:outline-none focus:border-blue-500 text-sm sm:text-base"
-                  />
+              <div className="flex flex-col space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-300">Cigarettes today:</span>
+                  <span className="text-lg font-semibold">{habits.cigarettesSmoked}</span>
                 </div>
-              </div>
-
-              <div className="mt-6 bg-[#374151] p-3 sm:p-4 rounded-lg">
-                <div className="flex flex-col space-y-2">
-                  <div className="flex justify-between items-center">
-                    <div className="space-y-1">
-                      <p className="text-sm sm:text-base text-gray-300">
-                        Cigarettes remaining today:
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <span className="text-yellow-400 font-bold text-lg">
-                        {(habits?.cigarettesPerDay ?? 0) - (habits?.cigarettesSmoked ?? 0)}
-                      </span>
-                      <button
-                        onClick={handleReset}
-                        className="px-3 py-1 text-sm rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-                      >
-                        Reset
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Next cigarette timing indicator */}
-                  {habits.cigarettesSmoked < habits.cigarettesPerDay && timingInfo && (
-                    <div className="mt-2 space-y-3">
-                      <div className="flex justify-between items-center text-sm">
-                        <div className="flex flex-col">
-                          <span className="text-gray-400 text-xs">Previous</span>
-                          <span className="text-gray-300">{formatTime(timingInfo.lastCigaretteTime)}</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className="text-gray-400 text-xs">Next cigarette</span>
-                          <span className={timingInfo.isOnSchedule ? 'text-green-400' : 'text-red-400'}>
-                            {formatTime(timingInfo.nextCigaretteTime)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {timingInfo.isOnSchedule ? (
-                        <div className="text-center">
-                          <span className="text-sm text-gray-400">Time until next: </span>
-                          <span className="text-green-400 font-medium">
-                            {timingInfo.secondsUntilNext > 60
-                              ? `${Math.floor(timingInfo.minutesUntilNext)}m ${Math.floor(timingInfo.secondsUntilNext % 60)}s`
-                              : `${Math.max(0, timingInfo.secondsUntilNext)}s`}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="text-center text-red-400 text-sm">
-                          Behind schedule
-                        </div>
-                      )}
-
-                      <div className="relative h-1 bg-gray-700 rounded-full overflow-hidden">
-                        <div
-                          className="absolute left-0 top-0 h-full bg-yellow-400/30"
-                          style={{ width: `${timingInfo.progress * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-300">Daily target:</span>
+                  <span className="text-lg font-semibold">{habits.cigarettesPerDay}</span>
                 </div>
-              </div>
 
-              <div className="mt-4">
-                <h3 className="text-lg font-medium text-gray-200 mb-3">Your daily smoking pattern:</h3>
-                <div className="space-y-4">
-                  {[
-                    { period: 'Morning', icon: '🌅', start: 6, end: 12 },
-                    { period: 'Afternoon', icon: '☀️', start: 12, end: 18 },
-                    { period: 'Evening', icon: '🌙', start: 18, end: 24 }
-                  ].map(({ period, icon, start, end }) => {
-                    const timeRange = getTimeRangeForPeriod(start, end);
-                    const [periodStart, periodEnd] = timeRange.split(' - ');
-                    const cigarettesPerHour = habits.cigarettesPerDay / getSmokingHoursPerDay(habits.startTime, habits.endTime);
-                    const hoursInPeriod = generateHourBlocks(habits.startTime, habits.endTime)
-                      .filter(h => h.hour >= start && h.hour < end)
-                      .length;
-                    const totalInPeriod = Math.round(cigarettesPerHour * hoursInPeriod);
-                    const smokedInPeriod = habits.cigarettesSmokedPerPeriod[period.toLowerCase() as keyof typeof habits.cigarettesSmokedPerPeriod];
-
-                    return (
-                      <div key={period} className="flex flex-col space-y-1">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <span>{icon}</span>
-                            <span className="text-gray-300">{period}</span>
-                          </div>
-                          <div className="text-sm text-gray-400">
-                            ({periodStart} - {periodEnd})
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between px-2">
-                          <span className="text-yellow-400">{smokedInPeriod?.toString() ?? '0'}</span>
-                          <span className="text-gray-400">of</span>
-                          <span className="text-yellow-400">{totalInPeriod?.toString() ?? '0'}</span>
-                          <span className="text-sm text-gray-400">cigarettes</span>
+                <div className="mt-4">
+                  <h3 className="text-lg font-medium text-gray-200 mb-3">Your daily smoking pattern:</h3>
+                  <div className="space-y-4">
+                    {Object.entries(calculateDailyPattern()).map(([period, data]) => (
+                      <div key={period} className="flex flex-col">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm capitalize">{period}</span>
+                          <span className="text-sm">{data.smoked} of {data.total}</span>
                         </div>
                         <div className="w-full bg-gray-700 rounded-full h-2">
                           <div
-                            className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
+                            className="bg-blue-500 rounded-full h-2 transition-all duration-500"
                             style={{
-                              width: `${totalInPeriod > 0 ? (smokedInPeriod / totalInPeriod) * 100 : 0}%`
+                              width: `${(data.smoked / data.total) * 100}%`
                             }}
                           />
                         </div>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-4">
-                <h3 className="text-lg font-medium text-gray-200 mb-3">Set Your Quit Date</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="targetDate" className="block text-sm font-medium text-gray-300 mb-2">
-                      Choose your quit date:
-                    </label>
-                    <input
-                      type="date"
-                      id="targetDate"
-                      name="targetDate"
-                      value={habits.targetDate}
-                      onChange={handleChange}
-                      min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-3 sm:px-4 py-2 rounded bg-[#2d3748] text-white border border-gray-600 focus:outline-none focus:border-blue-500 text-sm sm:text-base"
-                    />
-                  </div>
-
-                  <div className="text-center">
-                    <div className="text-[64px] text-[#60A5FA] font-bold">
-                      {Math.max(0, Math.ceil((new Date(habits.targetDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} days
-                    </div>
-                    <div className="text-gray-400">until your quit date</div>
-                  </div>
-
-                  <div>
-                    <div className="text-lg font-medium text-gray-200 mb-3">Reduction Schedule</div>
-                    <div className="space-y-2">
-                      <div className="bg-[#1e293b] rounded p-3 flex justify-between items-center">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-gray-400">Day 0</span>
-                          <span className="text-gray-500">({new Date().toISOString().split('T')[0]})</span>
-                        </div>
-                        <span className="text-yellow-400">{habits.initialCount} cig/day</span>
-                      </div>
-                      <div className="bg-[#1e293b] rounded p-3 flex justify-between items-center border border-green-500">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-gray-400">Quit Date</span>
-                          <span className="text-gray-500">({habits.targetDate})</span>
-                        </div>
-                        <span className="text-green-500">0 cig/day</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="initialCount" className="block text-sm font-medium text-gray-300 mb-2">
-                      Initial cigarettes per day:
-                    </label>
-                    <input
-                      type="number"
-                      id="initialCount"
-                      name="initialCount"
-                      value={habits?.initialCount?.toString() || '30'}
-                      onChange={handleChange}
-                      min="0"
-                      className="w-full px-3 sm:px-4 py-2 rounded bg-[#2d3748] text-white border border-gray-600 focus:outline-none focus:border-blue-500 text-sm sm:text-base"
-                    />
-                  </div>
-                </div>
+              {/* Reset button at the bottom */}
+              <div className="mt-6">
+                <button
+                  onClick={handleReset}
+                  className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                >
+                  Reset Progress
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Material Design FAB with Progress Ring */}
+      {/* Floating smoke button */}
       {mounted && (
-        <div className="fixed bottom-6 right-6 flex flex-col items-center">
-          <button
-            onClick={handleSmokeClick}
-            disabled={habits.cigarettesSmoked >= habits.cigarettesPerDay}
-            className={`relative w-16 h-16 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 transform hover:scale-105 active:scale-95 ${
-              habits.cigarettesSmoked >= habits.cigarettesPerDay
-                ? 'bg-gray-600 text-gray-400 cursor-not-allowed shadow-none'
-                : 'bg-yellow-500 text-gray-900 hover:bg-yellow-400'
-            }`}
-            style={{
-              boxShadow: habits.cigarettesSmoked >= habits.cigarettesPerDay 
-                ? 'none' 
-                : '0 3px 5px -1px rgba(0,0,0,0.2), 0 6px 10px 0 rgba(0,0,0,0.14), 0 1px 18px 0 rgba(0,0,0,0.12)'
-            }}
-          >
-            {/* Progress Ring */}
-            {timingInfo && habits.cigarettesSmoked < habits.cigarettesPerDay && (
-              <svg 
-                className="absolute inset-0 -rotate-90 w-16 h-16"
-                viewBox="0 0 100 100"
-              >
-                {/* Background ring */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="46"
-                  fill="none"
-                  stroke="rgba(0,0,0,0.2)"
-                  strokeWidth="8"
-                />
-                {/* Progress ring */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="46"
-                  fill="none"
-                  stroke={timingInfo.isOnSchedule ? '#4ade80' : '#ef4444'}
-                  strokeWidth="8"
-                  strokeDasharray={`${timingInfo.progress * 289} 289`}
-                  className="transition-all duration-200"
-                />
-              </svg>
-            )}
-
-            {/* Plus Icon */}
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              viewBox="0 0 24 24" 
-              fill="currentColor" 
-              className="w-8 h-8 z-10"
-            >
-              <path d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" />
-            </svg>
-          </button>
-
-          {/* Time until next cigarette */}
+        <div className="fixed bottom-4 right-4 z-50">
           {timingInfo && habits.cigarettesSmoked < habits.cigarettesPerDay && (
-            <div className="mt-2 text-center">
-              <span className={`text-sm font-medium ${timingInfo.isOnSchedule ? 'text-green-400' : 'text-red-400'}`}>
-                {timingInfo.isOnSchedule ? (
-                  timingInfo.secondsUntilNext > 60
-                    ? `${Math.floor(timingInfo.minutesUntilNext)}m ${Math.floor(timingInfo.secondsUntilNext % 60)}s`
-                    : `${Math.max(0, timingInfo.secondsUntilNext)}s`
-                ) : (
-                  'Behind schedule'
-                )}
-              </span>
+            <div className="bg-[#1f2937] rounded-lg shadow-lg p-4 mb-2 w-64">
+              <div className="flex justify-between items-center text-sm mb-2">
+                <div>
+                  <span className="text-gray-400">Next in: </span>
+                  <span className={timingInfo.isOnSchedule ? 'text-green-400' : 'text-yellow-400'}>
+                    {timingInfo.minutesUntilNext > 0
+                      ? `${Math.floor(timingInfo.minutesUntilNext)}m ${Math.floor(timingInfo.secondsUntilNext % 60)}s`
+                      : 'Now'}
+                  </span>
+                </div>
+                <span className={timingInfo.isOnSchedule ? 'text-green-400' : 'text-yellow-400'}>
+                  {timingInfo.isOnSchedule ? 'On track' : 'Time for one'}
+                </span>
+              </div>
+              <div className="relative h-1 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="absolute left-0 top-0 h-full bg-blue-500"
+                  style={{ width: `${timingInfo.progress * 100}%` }}
+                />
+              </div>
             </div>
           )}
+          <button
+            onClick={handleSmokeClick}
+            disabled={!timingInfo || habits.cigarettesSmoked >= habits.cigarettesPerDay}
+            className={`w-16 h-16 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 ${
+              !timingInfo || habits.cigarettesSmoked >= habits.cigarettesPerDay
+                ? 'bg-gray-600 cursor-not-allowed'
+                : timingInfo.isOnSchedule
+                ? 'bg-green-500 hover:bg-green-600'
+                : 'bg-yellow-500 hover:bg-yellow-600'
+            }`}
+          >
+            🚬
+          </button>
         </div>
       )}
     </div>

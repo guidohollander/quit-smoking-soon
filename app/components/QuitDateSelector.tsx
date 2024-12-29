@@ -7,41 +7,34 @@ interface QuitDateSelectorProps {
   className?: string;
   onQuitDateChange?: (date: string) => void;
   cigarettesPerDay: number;
+  defaultQuitDate: string;
 }
 
-export default function QuitDateSelector({ className = '', onQuitDateChange, cigarettesPerDay }: QuitDateSelectorProps) {
-  const [quitDate, setQuitDate] = useState<string>('');
+export default function QuitDateSelector({ 
+  className = '', 
+  onQuitDateChange, 
+  cigarettesPerDay,
+  defaultQuitDate 
+}: QuitDateSelectorProps) {
+  const [quitDate, setQuitDate] = useState<string>(defaultQuitDate);
   const [daysUntil, setDaysUntil] = useState<number | null>(null);
 
   useEffect(() => {
-    // Load saved quit date from localStorage
-    const savedDate = localStorage.getItem('quitDate');
-    if (savedDate) {
-      setQuitDate(savedDate);
+    // Always use the default date
+    setQuitDate(defaultQuitDate);
+    localStorage.setItem('quitDate', defaultQuitDate);
+    
+    // Calculate days until quit date
+    const today = new Date();
+    const targetDate = parseISO(defaultQuitDate);
+    const days = differenceInDays(targetDate, today);
+    setDaysUntil(days);
+
+    // Notify parent component
+    if (onQuitDateChange) {
+      onQuitDateChange(defaultQuitDate);
     }
-  }, []);
-
-  useEffect(() => {
-    if (quitDate) {
-      // Save to localStorage whenever quit date changes
-      localStorage.setItem('quitDate', quitDate);
-      
-      // Calculate days until quit date
-      const today = new Date();
-      const targetDate = parseISO(quitDate);
-      const days = differenceInDays(targetDate, today);
-      setDaysUntil(days);
-
-      // Notify parent component
-      if (onQuitDateChange) {
-        onQuitDateChange(quitDate);
-      }
-    }
-  }, [quitDate, onQuitDateChange]);
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setQuitDate(e.target.value);
-  };
+  }, [defaultQuitDate, onQuitDateChange]);
 
   // Calculate reduction schedule
   const getReductionSchedule = () => {
@@ -99,7 +92,7 @@ export default function QuitDateSelector({ className = '', onQuitDateChange, cig
             type="date"
             id="quitDate"
             value={quitDate}
-            onChange={handleDateChange}
+            disabled
             min={format(new Date(), 'yyyy-MM-dd')}
             className="w-full px-3 sm:px-4 py-2 rounded bg-[#2d3748] text-white border border-gray-600 focus:outline-none focus:border-blue-500 text-sm sm:text-base"
           />
