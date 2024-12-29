@@ -101,39 +101,8 @@ export function CircularSmokingTracker({
 
   if (!mounted || !timingInfo) return null;
 
-  // Calculate angles and positions for the circular tracker
-  const totalTime = timingInfo.minutesUntilNext + timingInfo.secondsUntilNext / 60;
-  const remainingTime = timingInfo.minutesUntilNext + timingInfo.secondsUntilNext / 60;
-  const progressPercentage = 1 - (remainingTime / totalTime);
-  const outerRingProgress = 360 * progressPercentage;
-  const cigaretteAngle = 360 / cigarettesPerDay;
-  const smokedCigaretteAngles = habits.cigarettesSmoked * cigaretteAngle;
-
   return (
     <div className={`${className} relative w-64 h-64`}>
-      {/* Outer Ring - Time Progress */}
-      <svg className="absolute top-0 left-0 w-full h-full" viewBox="0 0 100 100">
-        <circle 
-          cx="50" 
-          cy="50" 
-          r="48" 
-          fill="none" 
-          stroke="#374151" 
-          strokeWidth="4"
-        />
-        <circle 
-          cx="50" 
-          cy="50" 
-          r="48" 
-          fill="none" 
-          stroke={timingInfo.isOnSchedule ? '#10B981' : '#EF4444'}
-          strokeWidth="4"
-          strokeDasharray={301.59}
-          strokeDashoffset={301.59 - (timingInfo.progress / 100) * 301.59}
-          transform="rotate(-90 50 50)"
-        />
-      </svg>
-
       {/* Inner Ring - Cigarette Progress */}
       <svg className="absolute top-0 left-0 w-full h-full" viewBox="0 0 100 100">
         <circle 
@@ -145,7 +114,7 @@ export function CircularSmokingTracker({
           strokeWidth="4"
         />
         {[...Array(cigarettesPerDay)].map((_, index) => {
-          const angle = index * cigaretteAngle;
+          const angle = index * (360 / cigarettesPerDay);
           return (
             <line
               key={index}
@@ -406,19 +375,16 @@ export default function SmokingHabits({
           </div>
 
           <div className="flex justify-center">
-            <button
-              onClick={handleSmokeClick}
-              disabled={habitsState.cigarettesSmoked >= habitsState.cigarettesPerDay}
-              className={`
-                px-6 py-2 rounded-md text-white font-medium
-                ${habitsState.cigarettesSmoked >= habitsState.cigarettesPerDay
-                  ? 'bg-gray-600 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700'}
-                transition-colors
-              `}
-            >
-              I Smoked
-            </button>
+            {/* Next In Bar */}
+            <div className="absolute bottom-2 left-0 right-0 h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-green-500 origin-left" 
+                style={{ 
+                  width: '100%', 
+                  transform: `scaleX(${timingInfo.secondsUntilNext / 60})` 
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
