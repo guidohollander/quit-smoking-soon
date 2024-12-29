@@ -131,9 +131,9 @@ export default function SmokingHabits({
     setHabits(prev => ({
       ...prev,
       cigarettesSmoked: currentSmoked,
-      cigarettesSmokedPerPeriod: calculateDailyPattern(prev, currentSmoked)
+      cigarettesSmokedPerPeriod: calculateDailyPattern()
     }));
-  }, [calculateCurrentSmoked]);
+  }, [calculateCurrentSmoked, calculateDailyPattern]);
 
   // Initialize mounted state
   useEffect(() => {
@@ -224,9 +224,9 @@ export default function SmokingHabits({
         ...prev,
         cigarettesSmoked: newTotal,
         cigarettesSmokedPerPeriod: {
-          morning: pattern.morning.smoked,
-          afternoon: pattern.afternoon.smoked,
-          evening: pattern.evening.smoked
+          morning: pattern.morning,
+          afternoon: pattern.afternoon,
+          evening: pattern.evening
         }
       }));
 
@@ -235,9 +235,9 @@ export default function SmokingHabits({
         ...habits,
         cigarettesSmoked: newTotal,
         cigarettesSmokedPerPeriod: {
-          morning: pattern.morning.smoked,
-          afternoon: pattern.afternoon.smoked,
-          evening: pattern.evening.smoked
+          morning: pattern.morning,
+          afternoon: pattern.afternoon,
+          evening: pattern.evening
         }
       };
       localStorage.setItem('smokingHabits', JSON.stringify(updatedHabits));
@@ -316,10 +316,10 @@ export default function SmokingHabits({
     const totalHours = morningHours + afternoonHours + eveningHours;
 
     // Calculate cigarettes for each period based on duration
-    const totalCigarettes = 32; // Fixed value
+    const totalCigarettes = habits.cigarettesPerDay; // Use the actual daily target
     const morningTarget = Math.round((morningHours / totalHours) * totalCigarettes);
     const afternoonTarget = Math.round((afternoonHours / totalHours) * totalCigarettes);
-    const eveningTarget = totalCigarettes - morningTarget - afternoonTarget; // Ensure total adds up to 32
+    const eveningTarget = totalCigarettes - morningTarget - afternoonTarget; // Ensure total adds up
 
     // Calculate current progress
     const now = new Date();
@@ -357,20 +357,11 @@ export default function SmokingHabits({
     }
 
     return {
-      morning: {
-        smoked: morningSmoked,
-        total: morningTarget
-      },
-      afternoon: {
-        smoked: afternoonSmoked,
-        total: afternoonTarget
-      },
-      evening: {
-        smoked: eveningSmoked,
-        total: eveningTarget
-      }
+      morning: morningSmoked,
+      afternoon: afternoonSmoked,
+      evening: eveningSmoked
     };
-  }, [habits.cigarettesSmoked]);
+  }, [habits.cigarettesPerDay, habits.cigarettesSmoked]);
 
   const calculateDailyPatternWithSmoked = useCallback((habits: SmokingHabits, smoked: number) => {
     const now = new Date();
@@ -488,14 +479,14 @@ export default function SmokingHabits({
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-sm capitalize">{period}</span>
                         <span className="text-sm text-gray-400">
-                          {data.smoked}/{data.total}
+                          {data}/{habits.cigarettesPerDay}
                         </span>
                       </div>
                       <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-blue-500 transition-all duration-300"
                           style={{
-                            width: `${(data.smoked / data.total) * 100}%`,
+                            width: `${(data / habits.cigarettesPerDay) * 100}%`,
                           }}
                         />
                       </div>
