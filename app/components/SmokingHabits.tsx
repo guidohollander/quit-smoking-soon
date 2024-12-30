@@ -343,7 +343,7 @@ export default function SmokingHabits({
                     ? 'bg-green-500' 
                     : 'bg-red-500'
                 }`}
-                style={{ width: `${timingInfo.progress}%` }}
+                style={{ width: `${(habitsState.cigarettesSmoked / habitsState.cigarettesPerDay) * 100}%` }}
               />
             </div>
             
