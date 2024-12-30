@@ -374,17 +374,13 @@ export default function SmokingHabits({
             </div>
           </div>
 
-          <div className="flex justify-center">
-            {/* Next In Bar */}
-            <div className="absolute bottom-2 left-0 right-0 h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-green-500 origin-left" 
-                style={{ 
-                  width: '100%', 
-                  transform: `scaleX(${timingInfo.secondsUntilNext / 60})` 
-                }}
-              />
-            </div>
+          <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-green-500 transition-all duration-300" 
+              style={{ 
+                width: `${(1 - timingInfo.secondsUntilNext / (timingInfo.minutesUntilNext * 60 || 60)) * 100}%`
+              }}
+            />
           </div>
         </div>
       )}
