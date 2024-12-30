@@ -313,6 +313,10 @@ export default function SmokingHabits({
     return () => clearInterval(intervalId);
   }, [calculateTimingInfo, habitsState.lastSmokedTime]);
 
+  const totalSmokingHours = 24 - 8;
+  const totalSmokingMinutes = totalSmokingHours * 60;
+  const minutesPerCigarette = totalSmokingMinutes / cigarettesPerDay;
+
   return (
     <div className={`${className} bg-[#1f2937] p-4 sm:p-6 rounded-lg relative`}>
       {mounted && timingInfo && (
@@ -378,7 +382,7 @@ export default function SmokingHabits({
             <div 
               className="h-full bg-green-500 transition-all duration-300" 
               style={{ 
-                width: `${(1 - timingInfo.secondsUntilNext / (timingInfo.minutesUntilNext * 60 || 60)) * 100}%`
+                width: `${Math.max(0, Math.min(100, (timingInfo.minutesUntilNext * 60 + (timingInfo.secondsUntilNext % 60)) / (minutesPerCigarette * 60) * 100))}%`
               }}
             />
           </div>
