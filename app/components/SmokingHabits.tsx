@@ -23,131 +23,82 @@ export function CircularSmokingTracker({
   cigarettesPerDay = 150,
   className = '',
   habits,
+  timingInfo,
   onSmokeClick,
   onReset
 }: { 
   cigarettesPerDay?: number,
   className?: string,
   habits: SmokingHabits,
+  timingInfo: CigaretteTimingInfo | null,
   onSmokeClick: () => void,
   onReset: () => void
 }) {
   const [mounted, setMounted] = useState(false);
-  const [timingInfo, setTimingInfo] = useState<CigaretteTimingInfo | null>(null);
-
-  const calculateTimingInfo = useCallback(() => {
-    if (typeof window === 'undefined') return null;
-
-    const now = new Date();
-    const lastSmoked = new Date(habits.lastSmokedTime || now);
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-
-    const startHour = 8;  // Fixed start at 8:00 AM
-    const endHour = 24;   // Fixed end at midnight
-
-    const currentTimeInMinutes = currentHour * 60 + currentMinute;
-    const startTimeInMinutes = startHour * 60;
-    const endTimeInMinutes = endHour * 60;
-    
-    const isWithinSmokingHours = 
-      currentHour >= startHour && 
-      currentHour < endHour;
-
-    if (!isWithinSmokingHours) {
-      return null;
-    }
-
-    const totalSmokingHours = endHour - startHour;
-    const totalSmokingMinutes = totalSmokingHours * 60;
-    
-    const minutesPerCigarette = totalSmokingMinutes / cigarettesPerDay;
-    
-    // Calculate time since last cigarette
-    const timeSinceLastSmokedMinutes = 
-      (now.getTime() - lastSmoked.getTime()) / (1000 * 60);
-    
-    const nextCigaretteMinutes = minutesPerCigarette - timeSinceLastSmokedMinutes;
-    
-    const minutesUntilNext = Math.max(0, nextCigaretteMinutes);
-    const secondsUntilNext = Math.max(0, Math.floor(minutesUntilNext * 60));
-
-    const expectedCigarettes = Math.floor(
-      (currentTimeInMinutes - startTimeInMinutes) / minutesPerCigarette
-    );
-
-    return {
-      progress: (currentTimeInMinutes - startTimeInMinutes) / totalSmokingMinutes * 100,
-      isOnSchedule: habits.cigarettesSmoked === expectedCigarettes,
-      minutesUntilNext: Math.floor(minutesUntilNext),
-      secondsUntilNext: Math.floor(secondsUntilNext),
-      expectedCigarettes
-    };
-  }, [cigarettesPerDay, habits.cigarettesSmoked, habits.lastSmokedTime]);
 
   useEffect(() => {
     setMounted(true);
-    
-    const initialInfo = calculateTimingInfo();
-    setTimingInfo(initialInfo);
-
-    const intervalId = setInterval(() => {
-      const updatedInfo = calculateTimingInfo();
-      setTimingInfo(updatedInfo);
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, [calculateTimingInfo, habits.lastSmokedTime]);
+  }, []);
 
   if (!mounted || !timingInfo) return null;
 
+  const percentage = (habits.cigarettesSmoked / habits.cigarettesPerDay) * 100;
+  const minutesPerCigarette = (16 * 60) / cigarettesPerDay;
+  const nextCigarettePercentage = (timingInfo.minutesUntilNext * 60 + (timingInfo.secondsUntilNext % 60)) / (minutesPerCigarette * 60) * 100;
+  
   return (
-    <div className={`${className} relative w-64 h-64`}>
-      {/* Inner Ring - Cigarette Progress */}
-      <svg className="absolute top-0 left-0 w-full h-full" viewBox="0 0 100 100">
-        <circle 
-          cx="50" 
-          cy="50" 
-          r="35" 
-          fill="none" 
-          stroke="#374151" 
-          strokeWidth="4"
-        />
-        {[...Array(cigarettesPerDay)].map((_, index) => {
-          const angle = index * (360 / cigarettesPerDay);
-          return (
-            <line
-              key={index}
-              x1="50"
-              y1="15"
-              x2="50"
-              y2="20"
-              stroke={index < habits.cigarettesSmoked ? '#10B981' : '#6B7280'}
-              strokeWidth="2"
-              transform={`rotate(${angle} 50 50)`}
-            />
-          );
-        })}
-      </svg>
-
-      {/* Smoke Button */}
-      <button
+    <div className="relative w-full">
+      <button 
         onClick={onSmokeClick}
-        disabled={habits.cigarettesSmoked >= habits.cigarettesPerDay}
-        className={`
-          absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2
-          w-24 h-24 rounded-full text-white font-bold
-          flex items-center justify-center
-          ${timingInfo.isOnSchedule 
-            ? 'bg-green-500 hover:bg-green-600' 
-            : 'bg-red-500 hover:bg-red-600'}
-          transition-colors duration-300
-          ${habits.cigarettesSmoked >= habits.cigarettesPerDay 
-            ? 'opacity-50 cursor-not-allowed' 
-            : 'opacity-100'}
-        `}
+        className="relative w-32 h-32 mx-auto block"
       >
-        <div className="text-center">
+        <svg className="transform -rotate-90 w-full h-full">
+          {/* Outer ring background */}
+          <circle
+            cx="64"
+            cy="64"
+            r="62"
+            stroke="currentColor"
+            strokeWidth="4"
+            fill="transparent"
+            className="text-gray-700"
+          />
+          {/* Outer ring progress - Next cigarette countdown */}
+          <circle
+            cx="64"
+            cy="64"
+            r="62"
+            stroke="currentColor"
+            strokeWidth="4"
+            fill="transparent"
+            strokeDasharray={`${2 * Math.PI * 62}`}
+            strokeDashoffset={`${2 * Math.PI * 62 * (nextCigarettePercentage / 100)}`}
+            className="text-green-500 transition-all duration-300"
+          />
+          {/* Inner ring background */}
+          <circle
+            cx="64"
+            cy="64"
+            r="54"
+            stroke="currentColor"
+            strokeWidth="8"
+            fill="transparent"
+            className="text-gray-700"
+          />
+          {/* Inner ring progress - Cigarettes smoked */}
+          <circle
+            cx="64"
+            cy="64"
+            r="54"
+            stroke="currentColor"
+            strokeWidth="8"
+            fill="transparent"
+            strokeDasharray={`${2 * Math.PI * 54}`}
+            strokeDashoffset={`${2 * Math.PI * 54 * (1 - percentage / 100)}`}
+            className="text-green-500 transition-all duration-300"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
           <div>I Smoked</div>
           <div className="text-sm">
             {habits.cigarettesSmoked} / {habits.cigarettesPerDay}
@@ -324,6 +275,7 @@ export default function SmokingHabits({
           <CircularSmokingTracker 
             cigarettesPerDay={cigarettesPerDay} 
             habits={habitsState} 
+            timingInfo={timingInfo} 
             onSmokeClick={handleSmokeClick} 
             onReset={handleReset} 
           />
